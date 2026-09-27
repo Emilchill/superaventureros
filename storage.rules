@@ -1,0 +1,24 @@
+// Firebase Storage Rules — Super Aventureros RD
+// Subir estas reglas en: Firebase Console → Storage → Rules
+//
+// IMPORTANTE: Estas reglas permiten lectura pública (para que los visitantes
+// vean las fotos) y escritura libre (para que el admin pueda subir fotos
+// sin autenticación). Si deseas mayor seguridad, agrega autenticación.
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Fotos del catálogo: lectura pública, escritura libre
+    match /fotos/{allPaths=**} {
+      allow read:  if true;
+      allow write: if true;
+    }
+
+    // Todo lo demás: solo lectura pública
+    match /{allPaths=**} {
+      allow read:  if true;
+      allow write: if false;
+    }
+  }
+}

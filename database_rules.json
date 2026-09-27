@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "catalog": {
+      ".read": true,
+      ".write": true
+    },
+    "site": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
