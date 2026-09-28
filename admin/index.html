@@ -239,19 +239,20 @@
           </div>
         </div>
 
-        <!-- Mapa de asientos del bus (propio de esta salida) -->
-        <div style="grid-column:1/-1;">
-          <label class="field-label">Mapa de asientos del bus</label>
-          <p style="color:var(--muted);font-size:.78rem;margin:-.2rem 0 .75rem;">Haz clic en un asiento para cambiar su estado (Disponible → Reservado → Ocupado). Este mapa es exclusivo de esta salida; guárdalo con el botón de abajo.</p>
-          <div style="background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:1rem;padding:1.25rem 1rem;">
-            <div id="seat-editor-wrap"></div>
-            <div style="margin-top:1rem;padding-top:.85rem;border-top:1px solid var(--border);" id="seat-editor-legend"></div>
-          </div>
-        </div>
-
         <div style="grid-column:1/-1;">
           <label class="field-label" for="f-form">Link "Anotarme" (formulario de inscripción)</label>
           <input id="f-form" type="url" class="field" value="https://forms.gle/ejemplo">
+        </div>
+
+        <div>
+          <label class="field-label" for="f-seats">Capacidad de asientos (gugua)</label>
+          <input id="f-seats" type="number" class="field" min="0" max="200" placeholder="0 = sin mapa de asientos">
+          <p style="font-size:.72rem;color:var(--muted);margin-top:.3rem;">Define cuántos asientos tiene la gugua para esta salida. Usa 0 para desactivar el mapa.</p>
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+          <button type="button" id="btn-manage-seats" class="btn-ghost" style="width:100%;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem;" disabled>
+            🚌 Gestionar asientos
+          </button>
         </div>
 
         <div style="grid-column:1/-1;display:flex;gap:.75rem;flex-wrap:wrap;padding-top:.5rem;">
@@ -341,6 +342,41 @@
 <footer style="text-align:center;padding:2rem;color:rgba(255,255,255,.15);font-size:.7rem;letter-spacing:.3em;text-transform:uppercase;margin-top:2rem;border-top:1px solid var(--border);">
   Super Aventureros RD &bull; Admin
 </footer>
+<!-- ══ MODAL: GESTIÓN DE ASIENTOS ════════════════════════════════════ -->
+<div id="seats-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.75);overflow-y:auto;padding:1.5rem;">
+  <div style="max-width:780px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:1.4rem;padding:1.5rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:.75rem;">
+      <div>
+        <h2 style="font-size:1.25rem;font-weight:800;margin-bottom:.2rem;">🚌 Mapa de asientos</h2>
+        <p id="seats-trip-name" style="color:var(--muted);font-size:.85rem;"></p>
+      </div>
+      <button type="button" id="btn-close-seats" class="btn-ghost" style="padding:.6rem 1rem;font-size:.85rem;">✕ Cerrar</button>
+    </div>
+
+    <!-- Legend -->
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem;padding:.75rem 1rem;background:rgba(0,0,0,.25);border-radius:.75rem;align-items:center;">
+      <span style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;">Click para cambiar estado →</span>
+      <div style="display:flex;align-items:center;gap:.4rem;"><div style="width:20px;height:20px;border-radius:50%;background:#374151;border:2px solid #6b7280;"></div><span style="font-size:.82rem;">Disponible</span></div>
+      <div style="display:flex;align-items:center;gap:.4rem;"><div style="width:20px;height:20px;border-radius:50%;background:rgba(34,197,94,.25);border:2px solid #22c55e;"></div><span style="font-size:.82rem;">Reservado</span></div>
+      <div style="display:flex;align-items:center;gap:.4rem;"><div style="width:20px;height:20px;border-radius:50%;background:rgba(239,68,68,.25);border:2px solid #ef4444;"></div><span style="font-size:.82rem;">Ocupado</span></div>
+    </div>
+
+    <!-- Stats -->
+    <div id="seats-stats" style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1.25rem;"></div>
+
+    <!-- Bus visual -->
+    <div style="overflow-x:auto;padding-bottom:.5rem;">
+      <div id="seats-bus-wrap" style="min-width:280px;max-width:420px;margin:0 auto;"></div>
+    </div>
+
+    <!-- Quick actions -->
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--border);">
+      <button type="button" id="btn-seats-clear" class="btn-ghost" style="font-size:.82rem;padding:.6rem 1rem;">Limpiar todo</button>
+      <button type="button" id="btn-seats-save" class="btn-gold" style="flex:1;min-width:140px;font-size:.85rem;">💾 Guardar mapa</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- /app -->
 
 <script src="../js/admin-config.js"></script>

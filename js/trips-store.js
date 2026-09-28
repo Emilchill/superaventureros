@@ -111,7 +111,8 @@
       facebookUrl:      String(t.facebookUrl  || '').trim(),
       tiktokUrl:        String(t.tiktokUrl    || '').trim(),
       order:            typeof t.order === 'number' && isFinite(t.order) ? t.order : 0,
-      busSeats:         normalizeBusSeatMap(t.busSeats)
+      totalSeats:       (typeof t.totalSeats === 'number' && isFinite(t.totalSeats) && t.totalSeats >= 0) ? Math.round(t.totalSeats) : 0,
+      seatMap:          (t.seatMap && typeof t.seatMap === 'object' && !Array.isArray(t.seatMap)) ? t.seatMap : {}
     };
   }
 
@@ -347,94 +348,6 @@
     return [];
   }
 
-  /* -- Mapa de asientos del bus (por salida) ------------------------- */
-  var BUS_TOTAL_SEATS = 49;
-  // Filas de arriba (parte trasera del bus) hacia abajo (parte delantera)
-  var BUS_ROWS = [
-    { back: true, groups: [[45,46],[49],[47,48]] },
-    { groups: [[41,42],[43,44]] },
-    { groups: [[37,38],[39,40]] },
-    { groups: [[33,34],[35,36]] },
-    { groups: [[29,30],[31,32]] },
-    { groups: [[25,26],[27,28]] },
-    { groups: [[21,22],[23,24]] },
-    { groups: [[17,18],[19,20]] },
-    { groups: [[13,14],[15,16]] },
-    { groups: [[9,10],[11,12]] },
-    { groups: [[5,6],[7,8]] },
-    { groups: [[1,2],[3,4]] }
-  ];
-
-  function normalizeBusSeatMap(raw) {
-    var out = {};
-    if (!raw || typeof raw !== 'object') return out;
-    var src = (raw.seats && typeof raw.seats === 'object') ? raw.seats : raw;
-    Object.keys(src).forEach(function (k) {
-      var n = parseInt(k, 10);
-      if (!isFinite(n) || n < 1 || n > BUS_TOTAL_SEATS) return;
-      var v = String(src[k] || '').toLowerCase().trim();
-      if (v === 'reservado' || v === 'ocupado') out[String(n)] = v;
-    });
-    return out;
-  }
-
-  function getBusSeatMap(trip) { return normalizeBusSeatMap(trip && trip.busSeats); }
-
-  function busSeatStatusLabel(s) {
-    return s === 'reservado' ? 'Reservado' : (s === 'ocupado' ? 'Ocupado' : 'Disponible');
-  }
-
-  function busSeatColors(status) {
-    if (status === 'reservado') return { bg: '#22c55e', border: '#16a34a', fg: '#ffffff' };
-    if (status === 'ocupado')   return { bg: '#ef4444', border: '#b91c1c', fg: '#ffffff' };
-    return { bg: 'rgba(255,255,255,0.92)', border: '#9ca3af', fg: '#111827' };
-  }
-
-  function renderBusSeatLegendHtml() {
-    return '<div style="display:flex;gap:1.25rem;align-items:center;flex-wrap:wrap;">'
-      +   '<div style="display:flex;align-items:center;gap:.5rem;"><span style="width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.92);border:2px solid #9ca3af;display:inline-block;"></span><span style="font-size:.78rem;">Disponible</span></div>'
-      +   '<div style="display:flex;align-items:center;gap:.5rem;"><span style="width:16px;height:16px;border-radius:50%;background:#22c55e;display:inline-block;"></span><span style="font-size:.78rem;">Reservado</span></div>'
-      +   '<div style="display:flex;align-items:center;gap:.5rem;"><span style="width:16px;height:16px;border-radius:50%;background:#ef4444;display:inline-block;"></span><span style="font-size:.78rem;">Ocupado</span></div>'
-      + '</div>';
-  }
-
-  /**
-   * Genera el HTML del bus con sus asientos.
-   * seatMap: { "3": "reservado", "12": "ocupado", ... }
-   * interactive: si es true, genera <button> clicables con data-seat (admin);
-   *              si es false, genera una vista de solo lectura (catálogo).
-   */
-  function renderBusSeatMapHtml(seatMap, interactive) {
-    seatMap = seatMap || {};
-    function seatEl(n) {
-      var st = seatMap[String(n)] || 'disponible';
-      var c = busSeatColors(st);
-      var tag = interactive ? 'button' : 'div';
-      var attrs = interactive
-        ? ' type="button" class="sa-bus-seat" data-seat="' + n + '" data-status="' + st + '"'
-        : ' class="sa-bus-seat"';
-      var cursor = interactive ? 'pointer' : 'default';
-      return '<' + tag + attrs + ' title="Asiento ' + n + ' \u2013 ' + busSeatStatusLabel(st) + '"'
-        + ' style="width:30px;height:30px;border-radius:50%;border:2px solid ' + c.border + ';background:' + c.bg + ';color:' + c.fg + ';font-size:.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:' + cursor + ';user-select:none;flex-shrink:0;line-height:1;padding:0;">'
-        + n + '</' + tag + '>';
-    }
-    function group(g) {
-      return '<div style="display:flex;flex-direction:column;gap:6px;">' + g.map(seatEl).join('') + '</div>';
-    }
-    var rowsHtml = BUS_ROWS.map(function (row) {
-      var groupsHtml = row.groups.map(group).join('<div style="width:16px;"></div>');
-      return '<div style="display:flex;justify-content:center;gap:12px;margin-bottom:' + (row.back ? '12px' : '6px') + ';">' + groupsHtml + '</div>';
-    }).join('');
-    return '<div style="background:#0b0b0b;border-radius:32px 32px 12px 12px;padding:16px 12px 10px;border:3px solid #000;max-width:220px;margin:0 auto;">'
-      +   rowsHtml
-      +   '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:2px dashed rgba(255,255,255,.15);">'
-      +     '<span style="font-size:.9rem;">\uD83D\uDEA6</span>'
-      +     '<span style="font-size:.6rem;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.08em;">Frente</span>'
-      +     '<span style="font-size:.9rem;">\uD83D\uDEAA</span>'
-      +   '</div>'
-      + '</div>';
-  }
-
   function setOnTripsPersistedLocal(fn) { onTripsPersistedLocal = typeof fn === 'function' ? fn : null; }
   function setOnSitePersistedLocal(fn)  { onSitePersistedLocal  = typeof fn === 'function' ? fn : null; }
 
@@ -451,9 +364,6 @@
     getSiteSettings, setSiteSettings, setSiteSettingsFromRemote,
     getAdminCredentials, setAdminCredentials, hasAdminPassword,
     tripImagesList,
-    setOnSitePersistedLocal,
-    BUS_TOTAL_SEATS, BUS_ROWS,
-    normalizeBusSeatMap, getBusSeatMap, busSeatStatusLabel,
-    renderBusSeatMapHtml, renderBusSeatLegendHtml
+    setOnSitePersistedLocal
   };
 })(typeof window !== 'undefined' ? window : this);

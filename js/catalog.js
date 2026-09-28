@@ -108,54 +108,6 @@
          + '</div></div></div></div></div></div>';
   }
 
-  /* ── Modal de asientos (solo lectura) ───────────────────────────── */
-  function buildSeatModal() {
-    if (document.getElementById('seat-modal')) return;
-    var el = document.createElement('div');
-    el.id = 'seat-modal';
-    el.setAttribute('role','dialog');
-    el.setAttribute('aria-modal','true');
-    el.className = 'hidden fixed inset-0 z-[320] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4';
-    el.innerHTML =
-      '<div class="w-full max-w-sm bg-gradient-to-br from-[#070d1b] to-[#0a1628] rounded-[1.75rem] overflow-hidden shadow-2xl border border-white/10 p-6 max-h-[92vh] overflow-y-auto">'
-      + '<div class="flex items-start justify-between gap-4 mb-4">'
-        + '<div>'
-          + '<p class="text-[#F5B800] text-[11px] font-bold uppercase tracking-widest mb-1">Disponibilidad</p>'
-          + '<h3 class="sa-seat-title text-lg font-extrabold text-white leading-tight"></h3>'
-        + '</div>'
-        + '<button type="button" class="sa-seat-close shrink-0 w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-xl leading-none flex items-center justify-center text-white transition-colors" aria-label="Cerrar">×</button>'
-      + '</div>'
-      + '<div class="sa-seat-map mb-4"></div>'
-      + '<div class="sa-seat-legend text-white/80"></div>'
-      + '<p class="text-white/40 text-[11px] mt-4 leading-relaxed">Este mapa lo actualiza el equipo de Super Aventureros. Para reservar tu asiento, contáctanos por WhatsApp.</p>'
-      + '</div>';
-    document.body.appendChild(el);
-    el.querySelector('.sa-seat-close').addEventListener('click', closeSeatModal);
-    el.addEventListener('click', function (e) { if (e.target === el) closeSeatModal(); });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && !el.classList.contains('hidden')) closeSeatModal();
-    });
-  }
-
-  function openSeatModal(trip) {
-    buildSeatModal();
-    var modal = document.getElementById('seat-modal');
-    modal.querySelector('.sa-seat-title').textContent = trip.title || 'Mapa de asientos';
-    var seatMap = TS.getBusSeatMap(trip);
-    modal.querySelector('.sa-seat-map').innerHTML = TS.renderBusSeatMapHtml(seatMap, false);
-    modal.querySelector('.sa-seat-legend').innerHTML = TS.renderBusSeatLegendHtml();
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-  }
-
-  function closeSeatModal() {
-    var modal = document.getElementById('seat-modal');
-    if (modal) modal.classList.add('hidden');
-    if (!document.getElementById('product-modal') || document.getElementById('product-modal').classList.contains('hidden')) {
-      document.body.style.overflow = '';
-    }
-  }
-
   /* ── Modal ───────────────────────────────────────────────────── */
   function buildModal() {
     if (document.getElementById('product-modal')) return;
@@ -188,8 +140,8 @@
         + '<div class="sa-price bg-gradient-to-r from-[#F5B800] to-[#FFD000] text-black self-start px-5 py-3 rounded-2xl shadow-lg font-black text-base"></div>'
         + '<p class="sa-description text-white/70 text-sm leading-relaxed flex-1"></p>'
         + '<div class="pt-2 flex flex-col gap-3">'
+          + '<div class="sa-seats-wrap" style="display:none;margin-bottom:.25rem;"></div>'
           + '<a class="sa-form-btn w-full bg-white text-black font-black text-center py-4 rounded-xl hover:bg-[#F5B800] transition-all duration-300 uppercase tracking-widest text-sm shadow-lg" href="#" target="_blank" rel="noopener noreferrer">Anotarme</a>'
-          + '<button type="button" class="sa-seats-btn w-full bg-white/10 hover:bg-white/20 text-white font-bold text-center py-3 rounded-xl transition-all duration-300 uppercase tracking-widest text-xs flex items-center justify-center gap-2">🚌 Ver disponibilidad de asientos</button>'
           + '<div class="sa-social flex flex-wrap gap-2"></div>'
         + '</div>'
       + '</div>'
@@ -279,8 +231,19 @@
 
     modal.querySelector('.sa-form-btn').href = trip.formUrl || '#';
     modal.querySelector('.sa-social').innerHTML = socialButtonsHtml(trip,'lg');
-    var seatsBtn = modal.querySelector('.sa-seats-btn');
-    if (seatsBtn) seatsBtn.onclick = function (e) { e.stopPropagation(); openSeatModal(trip); };
+
+    // ── Mapa de asientos (solo lectura) ──────────────────────────
+    var seatsWrap = modal.querySelector('.sa-seats-wrap');
+    if (seatsWrap) {
+      var total = parseInt(trip.totalSeats, 10) || 0;
+      if (total > 0) {
+        seatsWrap.style.display = '';
+        seatsWrap.innerHTML = buildClientSeatMap(total, trip.seatMap || {});
+      } else {
+        seatsWrap.style.display = 'none';
+        seatsWrap.innerHTML = '';
+      }
+    }
 
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
@@ -291,6 +254,89 @@
     if(modal) modal.classList.add('hidden');
     if(modalCarouselTimer){ clearInterval(modalCarouselTimer); modalCarouselTimer=null; }
     document.body.style.overflow = '';
+  }
+
+  /* ── Mapa de asientos (vista cliente, solo lectura) ──────────── */
+  function buildClientSeatMap(total, seatMap) {
+    var counts = { available: 0, reserved: 0, occupied: 0 };
+    for (var i = 1; i <= total; i++) {
+      var st = seatMap[String(i)] || 'available';
+      counts[st]++;
+    }
+
+    var ROWS = Math.ceil(total / 4);
+
+    var html = '<div style="padding:1rem;background:rgba(255,255,255,.04);border-radius:1rem;border:1px solid rgba(255,255,255,.1);">';
+
+    // Header
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem;flex-wrap:wrap;gap:.5rem;">'
+      + '<span style="font-size:.82rem;font-weight:800;color:#F5B800;text-transform:uppercase;letter-spacing:.07em;">🚌 Disponibilidad de asientos</span>'
+      + '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">'
+      + '<span style="font-size:.72rem;background:rgba(107,114,128,.15);border:1px solid #6b7280;border-radius:2rem;padding:.2rem .6rem;color:#9ca3af;">Disp: <b>' + counts.available + '</b></span>'
+      + '<span style="font-size:.72rem;background:rgba(34,197,94,.12);border:1px solid #22c55e;border-radius:2rem;padding:.2rem .6rem;color:#22c55e;">Res: <b>' + counts.reserved + '</b></span>'
+      + '<span style="font-size:.72rem;background:rgba(239,68,68,.12);border:1px solid #ef4444;border-radius:2rem;padding:.2rem .6rem;color:#ef4444;">Ocup: <b>' + counts.occupied + '</b></span>'
+      + '</div>'
+      + '</div>';
+
+    // Bus container
+    html += '<div style="background:#0a0f1a;border:2px solid rgba(255,255,255,.08);border-radius:1.5rem 1.5rem .75rem .75rem;padding:.85rem .7rem 1rem;overflow-x:auto;">';
+
+    // Frente
+    html += '<div style="text-align:center;margin-bottom:.7rem;padding-bottom:.6rem;border-bottom:1px dashed rgba(255,255,255,.1);">'
+      + '<span style="font-size:.68rem;color:rgba(255,255,255,.3);background:rgba(255,255,255,.06);border-radius:2rem;padding:.25rem .7rem;">🚍 Frente del bus</span>'
+      + '</div>';
+
+    // Grid de asientos: 2 + pasillo + 2
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 20px 1fr 1fr;gap:6px;align-items:center;">';
+
+    var seatNum = 1;
+    for (var row = 0; row < ROWS; row++) {
+      for (var col = 0; col < 5; col++) {
+        if (col === 2) {
+          // Pasillo
+          html += '<div style="text-align:center;font-size:.55rem;color:rgba(255,255,255,.1);">│</div>';
+        } else {
+          if (seatNum <= total) {
+            var state = seatMap[String(seatNum)] || 'available';
+            var bgColor, borderColor, textColor;
+            if (state === 'reserved') {
+              bgColor = 'rgba(34,197,94,.18)'; borderColor = '#22c55e'; textColor = '#22c55e';
+            } else if (state === 'occupied') {
+              bgColor = 'rgba(239,68,68,.18)'; borderColor = '#ef4444'; textColor = '#ef4444';
+            } else {
+              bgColor = 'rgba(255,255,255,.06)'; borderColor = 'rgba(255,255,255,.2)'; textColor = 'rgba(255,255,255,.5)';
+            }
+            html += '<div title="Asiento ' + seatNum + ' — ' + (state === 'reserved' ? 'Reservado' : state === 'occupied' ? 'Ocupado' : 'Disponible') + '" '
+              + 'style="width:100%;aspect-ratio:1;border-radius:50%;border:2px solid ' + borderColor + ';background:' + bgColor + ';'
+              + 'display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700;color:' + textColor + ';'
+              + 'min-width:28px;min-height:28px;">'
+              + seatNum
+              + '</div>';
+            seatNum++;
+          } else {
+            html += '<div></div>';
+          }
+        }
+      }
+    }
+
+    html += '</div>';
+
+    // Leyenda
+    html += '<div style="display:flex;gap:.6rem;justify-content:center;margin-top:.8rem;padding-top:.7rem;border-top:1px dashed rgba(255,255,255,.1);flex-wrap:wrap;">'
+      + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:rgba(255,255,255,.4);">'
+        + '<div style="width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.2);"></div>Disponible'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:#22c55e;">'
+        + '<div style="width:12px;height:12px;border-radius:50%;background:rgba(34,197,94,.18);border:1.5px solid #22c55e;"></div>Reservado'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:#ef4444;">'
+        + '<div style="width:12px;height:12px;border-radius:50%;background:rgba(239,68,68,.18);border:1.5px solid #ef4444;"></div>Ocupado'
+      + '</div>'
+      + '</div>';
+
+    html += '</div></div>';
+    return html;
   }
 
   /* ── Boton flotante WhatsApp ─────────────────────────────────── */

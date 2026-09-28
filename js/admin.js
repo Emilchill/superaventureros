@@ -2,7 +2,6 @@
   var TS = window.TripsStore;
   var editingId = null;
   var currentImages = [];
-  var currentSeatMap = {}; // mapa de asientos de la salida en edición: {"3":"reservado", ...}
   var SESSION_KEY = 'sa_admin_session';
   var SESSION_START = 'sa_admin_session_start';
   var SESSION_MS = 30 * 60 * 1000;
@@ -103,23 +102,6 @@
     currentImages.push(src);
     if ($('f-img-url')) $('f-img-url').value = '';
     renderStrip(); updatePreview(); toast('Imagen agregada');
-  }
-
-  function renderSeatEditor() {
-    var wrap = $('seat-editor-wrap');
-    var legend = $('seat-editor-legend');
-    if (!wrap) return;
-    wrap.innerHTML = TS.renderBusSeatMapHtml(currentSeatMap, true);
-    if (legend) legend.innerHTML = TS.renderBusSeatLegendHtml();
-    wrap.querySelectorAll('[data-seat]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var seat = btn.getAttribute('data-seat');
-        var cur = currentSeatMap[seat] || 'disponible';
-        var next = cur === 'disponible' ? 'reservado' : (cur === 'reservado' ? 'ocupado' : 'disponible');
-        if (next === 'disponible') delete currentSeatMap[seat]; else currentSeatMap[seat] = next;
-        renderSeatEditor();
-      });
-    });
   }
 
   function renderStrip() {
@@ -238,32 +220,40 @@
       hidePrice: !!($('f-hide-price') && $('f-hide-price').checked),
       images: images,
       formUrl: String($('f-form').value || 'https://forms.gle/ejemplo').trim(),
-      busSeats: { seats: currentSeatMap }
+      totalSeats: parseInt($('f-seats') ? $('f-seats').value : '0', 10) || 0
     };
     if (editingId) {
       var ex = TS.getTrips().find(function (x) { return x.id === editingId; });
-      if (ex) t.order = ex.order;
+      if (ex) {
+        t.order = ex.order;
+        // Preservar el mapa de asientos existente al editar
+        if (ex.seatMap && Object.keys(ex.seatMap).length) {
+          t.seatMap = ex.seatMap;
+        }
+      }
     }
     return TS.normalizeTrip(t);
   }
 
   function clearForm() {
-    editingId = null; currentImages = []; currentSeatMap = {};
+    editingId = null; currentImages = [];
     ['f-title','f-desc','f-loc','f-date-s','f-date-e','f-date-lbl','f-img-url'].forEach(function (id) { if ($(id)) $(id).value = ''; });
     if ($('f-price'))  $('f-price').value  = '';
     if ($('f-disc'))   $('f-disc').value   = '0';
     if ($('f-hide-price')) $('f-hide-price').checked = false;
     if ($('f-form'))   $('f-form').value   = 'https://forms.gle/ejemplo';
+    if ($('f-seats'))  $('f-seats').value  = '0';
+    var mBtn = $('btn-manage-seats');
+    if (mBtn) mBtn.disabled = true;
     if ($('form-title')) $('form-title').textContent = 'Nueva salida';
     if ($('btn-save'))   $('btn-save').textContent   = 'Crear salida';
     if ($('btn-cancel')) $('btn-cancel').style.display = 'none';
-    renderStrip(); updatePreview(); renderSeatEditor();
+    renderStrip(); updatePreview();
   }
 
   function fillForm(t) {
     if (!t) { clearForm(); return; }
     editingId = t.id; currentImages = TS.tripImagesList(t).slice();
-    currentSeatMap = TS.normalizeBusSeatMap(t.busSeats);
     $('f-title').value    = t.title || '';
     $('f-desc').value     = t.description || '';
     $('f-loc').value      = t.location || '';
@@ -275,10 +265,13 @@
     if ($('f-hide-price')) $('f-hide-price').checked = !!t.hidePrice;
     $('f-img-url').value  = (currentImages.length === 1 && currentImages[0].indexOf('http') === 0) ? currentImages[0] : '';
     $('f-form').value     = t.formUrl || '';
+    if ($('f-seats'))  $('f-seats').value  = t.totalSeats != null ? String(t.totalSeats) : '0';
+    var mBtn = $('btn-manage-seats');
+    if (mBtn) mBtn.disabled = !editingId;
     if ($('form-title')) $('form-title').textContent = 'Editar salida';
     if ($('btn-save'))   $('btn-save').textContent   = 'Guardar cambios';
     if ($('btn-cancel')) $('btn-cancel').style.display = 'inline-flex';
-    renderStrip(); updatePreview(); renderSeatEditor();
+    renderStrip(); updatePreview();
     setTimeout(function () { $('editor-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
   }
 
@@ -426,6 +419,9 @@
             if ($('btn-cancel')) $('btn-cancel').style.display = 'inline-flex';
             if ($('form-title')) $('form-title').textContent = 'Editar salida';
             if (window.StorageBar) StorageBar.update();
+            // Habilitar gestión de asientos si tiene capacidad
+            var mBtn = $('btn-manage-seats');
+            if (mBtn) mBtn.disabled = !(parseInt($('f-seats') ? $('f-seats').value : '0', 10) > 0);
           }).catch(function (err) {
             console.error('[save] upload error:', err);
             toast('Error subiendo fotos. Intenta de nuevo.', true);
@@ -441,6 +437,9 @@
           if ($('btn-cancel')) $('btn-cancel').style.display = 'inline-flex';
           if ($('form-title')) $('form-title').textContent = 'Editar salida';
           if (window.StorageBar) StorageBar.update();
+          // Habilitar gestión de asientos si tiene capacidad
+          var mBtnD = $('btn-manage-seats');
+          if (mBtnD) mBtnD.disabled = !(parseInt($('f-seats') ? $('f-seats').value : '0', 10) > 0);
         }
       });
     }
@@ -597,6 +596,241 @@
       if ($('l-pass'))    $('l-pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryLogin(); });
     });
   }
+
+  /* ══════════════════════════════════════════════════════════════════
+     MODAL DE GESTIÓN DE ASIENTOS
+  ══════════════════════════════════════════════════════════════════ */
+  var seatsEditingId = null;
+  var seatsCurrentMap = {};   // { '1': 'available'|'reserved'|'occupied' }
+
+  var SEAT_STATES = ['available', 'reserved', 'occupied'];
+  var SEAT_COLORS = {
+    available: { bg: '#1f2937', border: '#6b7280', text: '#9ca3af' },
+    reserved:  { bg: 'rgba(34,197,94,.2)', border: '#22c55e', text: '#22c55e' },
+    occupied:  { bg: 'rgba(239,68,68,.2)',  border: '#ef4444', text: '#ef4444' }
+  };
+  var SEAT_LABELS = { available: 'Disponible', reserved: 'Reservado', occupied: 'Ocupado' };
+
+  function openSeatsModal(tripId) {
+    if (!tripId) return;
+    seatsEditingId = tripId;
+    var trip = TS.getTrips().find(function (x) { return x.id === tripId; });
+    if (!trip) return;
+
+    // Copiar mapa actual
+    seatsCurrentMap = Object.assign({}, trip.seatMap || {});
+    var total = parseInt(trip.totalSeats, 10) || 0;
+
+    // Nombre de la salida
+    var nameEl = $('seats-trip-name');
+    if (nameEl) nameEl.textContent = trip.title || 'Sin título';
+
+    renderSeatsStats(total);
+    renderBus(total);
+
+    var modal = $('seats-modal');
+    if (modal) modal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeSeatsModal() {
+    seatsEditingId = null;
+    seatsCurrentMap = {};
+    var modal = $('seats-modal');
+    if (modal) modal.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+
+  function seatState(num) {
+    return seatsCurrentMap[String(num)] || 'available';
+  }
+
+  function cycleSeat(num) {
+    var cur = seatState(num);
+    var idx = SEAT_STATES.indexOf(cur);
+    var next = SEAT_STATES[(idx + 1) % SEAT_STATES.length];
+    if (next === 'available') {
+      delete seatsCurrentMap[String(num)];
+    } else {
+      seatsCurrentMap[String(num)] = next;
+    }
+    // Actualizar solo ese botón
+    var btn = document.querySelector('[data-seat="' + num + '"]');
+    if (btn) applySeatStyle(btn, num);
+    // Actualizar stats
+    var trip = TS.getTrips().find(function (x) { return x.id === seatsEditingId; });
+    renderSeatsStats(trip ? (parseInt(trip.totalSeats, 10) || 0) : 0);
+  }
+
+  function applySeatStyle(btn, num) {
+    var st = seatState(num);
+    var c = SEAT_COLORS[st];
+    btn.style.background = c.bg;
+    btn.style.borderColor = c.border;
+    btn.style.color = c.text;
+    btn.title = SEAT_LABELS[st];
+  }
+
+  function renderSeatsStats(total) {
+    var counts = { available: 0, reserved: 0, occupied: 0 };
+    for (var i = 1; i <= total; i++) {
+      counts[seatState(i)]++;
+    }
+    var el = $('seats-stats');
+    if (!el) return;
+    el.innerHTML = [
+      { key: 'available', label: 'Disponibles', color: '#6b7280' },
+      { key: 'reserved',  label: 'Reservados',  color: '#22c55e' },
+      { key: 'occupied',  label: 'Ocupados',    color: '#ef4444' }
+    ].map(function (s) {
+      return '<div style="padding:.5rem .9rem;border-radius:.65rem;background:rgba(255,255,255,.05);border:1px solid var(--border);text-align:center;">'
+        + '<div style="font-size:1.3rem;font-weight:900;color:' + s.color + ';">' + counts[s.key] + '</div>'
+        + '<div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">' + s.label + '</div>'
+        + '</div>';
+    }).join('') + '<div style="padding:.5rem .9rem;border-radius:.65rem;background:rgba(255,255,255,.05);border:1px solid var(--border);text-align:center;">'
+      + '<div style="font-size:1.3rem;font-weight:900;color:var(--gold);">' + total + '</div>'
+      + '<div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Total</div>'
+      + '</div>';
+  }
+
+  function renderBus(total) {
+    var wrap = $('seats-bus-wrap');
+    if (!wrap) return;
+    if (total <= 0) {
+      wrap.innerHTML = '<p style="text-align:center;color:var(--muted);padding:2rem;font-size:.9rem;">Esta salida no tiene asientos configurados.<br>Establece la capacidad en el formulario y guarda primero.</p>';
+      return;
+    }
+
+    // Layout de bus: 4 columnas (2+pasillo+2), filas
+    // Distribución igual que la imagen: columnas A B _ C D
+    var COLS = 4; // asientos por fila (2 izq + 2 der)
+    var rows = Math.ceil(total / COLS);
+
+    // Contenedor del bus con forma
+    var busHtml = '<div style="position:relative;background:#0e1512;border:3px solid rgba(255,255,255,.15);border-radius:2rem 2rem 1rem 1rem;padding:1rem .75rem 1.5rem;box-shadow:0 0 0 1px rgba(255,255,255,.05);">';
+
+    // Cabina del chofer arriba
+    busHtml += '<div style="text-align:center;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:2px dashed rgba(255,255,255,.1);">'
+      + '<div style="display:inline-flex;align-items:center;gap:.5rem;background:rgba(255,255,255,.06);border-radius:2rem;padding:.35rem .85rem;font-size:.75rem;color:rgba(255,255,255,.4);">'
+      + '🚌 <span>Frente del bus</span>'
+      + '</div>'
+      + '</div>';
+
+    // Grid de asientos
+    busHtml += '<div style="display:grid;grid-template-columns:1fr 1fr 28px 1fr 1fr;gap:8px;align-items:center;">';
+
+    var seatNum = 1;
+    for (var row = 0; row < rows; row++) {
+      // Asiento A (col 1)
+      busHtml += seatNum <= total ? makeSeatBtn(seatNum++) : '<div></div>';
+      // Asiento B (col 2)
+      busHtml += seatNum <= total ? makeSeatBtn(seatNum++) : '<div></div>';
+      // Pasillo
+      busHtml += '<div style="text-align:center;font-size:.6rem;color:rgba(255,255,255,.12);">│</div>';
+      // Asiento C (col 3)
+      busHtml += seatNum <= total ? makeSeatBtn(seatNum++) : '<div></div>';
+      // Asiento D (col 4)
+      busHtml += seatNum <= total ? makeSeatBtn(seatNum++) : '<div></div>';
+    }
+
+    busHtml += '</div>';
+
+    // Parte trasera del bus
+    busHtml += '<div style="text-align:center;margin-top:1rem;padding-top:.75rem;border-top:2px dashed rgba(255,255,255,.1);">'
+      + '<div style="display:inline-flex;align-items:center;gap:.5rem;background:rgba(255,255,255,.06);border-radius:2rem;padding:.3rem .75rem;font-size:.72rem;color:rgba(255,255,255,.3);">Parte trasera</div>'
+      + '</div>';
+
+    busHtml += '</div>';
+
+    wrap.innerHTML = busHtml;
+
+    // Asignar event listeners
+    wrap.querySelectorAll('[data-seat]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var n = parseInt(btn.getAttribute('data-seat'), 10);
+        cycleSeat(n);
+      });
+    });
+  }
+
+  function makeSeatBtn(num) {
+    var st = seatState(num);
+    var c = SEAT_COLORS[st];
+    return '<button type="button" data-seat="' + num + '" title="' + SEAT_LABELS[st] + '" '
+      + 'style="width:100%;aspect-ratio:1;border-radius:50%;border:2px solid ' + c.border + ';'
+      + 'background:' + c.bg + ';color:' + c.text + ';font-size:.68rem;font-weight:700;'
+      + 'cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;'
+      + 'min-width:32px;min-height:32px;">'
+      + num
+      + '</button>';
+  }
+
+  function saveSeatsMap() {
+    if (!seatsEditingId) return;
+    var trips = TS.getTrips();
+    var idx = trips.findIndex(function (x) { return x.id === seatsEditingId; });
+    if (idx < 0) return;
+    trips[idx].seatMap = Object.assign({}, seatsCurrentMap);
+    TS.setTrips(trips);
+    if (window.OracleSync) OracleSync.pushTrips();
+    toast('Mapa de asientos guardado ✓');
+    closeSeatsModal();
+  }
+
+  // Bindings del modal de asientos
+  document.addEventListener('DOMContentLoaded', function () {
+    var btnManage = $('btn-manage-seats');
+    if (btnManage) {
+      btnManage.addEventListener('click', function () {
+        if (!editingId) {
+          toast('Guarda la salida primero para gestionar sus asientos', true);
+          return;
+        }
+        var trip = TS.getTrips().find(function (x) { return x.id === editingId; });
+        if (!trip) { toast('Salida no encontrada', true); return; }
+        var seats = parseInt($('f-seats') ? $('f-seats').value : '0', 10) || 0;
+        if (seats <= 0) { toast('Define la capacidad de asientos primero', true); return; }
+        openSeatsModal(editingId);
+      });
+    }
+
+    var btnClose = $('btn-close-seats');
+    if (btnClose) btnClose.addEventListener('click', closeSeatsModal);
+
+    var btnSave = $('btn-seats-save');
+    if (btnSave) btnSave.addEventListener('click', saveSeatsMap);
+
+    var btnClear = $('btn-seats-clear');
+    if (btnClear) {
+      btnClear.addEventListener('click', function () {
+        seatsCurrentMap = {};
+        var trip = seatsEditingId ? TS.getTrips().find(function (x) { return x.id === seatsEditingId; }) : null;
+        var total = trip ? (parseInt(trip.totalSeats, 10) || 0) : 0;
+        renderSeatsStats(total);
+        renderBus(total);
+      });
+    }
+
+    // Cerrar con Escape
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        var modal = $('seats-modal');
+        if (modal && modal.style.display !== 'none') closeSeatsModal();
+      }
+    });
+
+    // Habilitar botón cuando hay totalSeats > 0 y hay salida guardada
+    var seatsInput = $('f-seats');
+    if (seatsInput) {
+      seatsInput.addEventListener('input', function () {
+        var mBtn = $('btn-manage-seats');
+        if (mBtn) {
+          var v = parseInt(seatsInput.value, 10) || 0;
+          mBtn.disabled = !(v > 0 && editingId);
+        }
+      });
+    }
+  });
 
   window.AdminApp = { renderList: renderList, bootstrap: bootstrap };
 })();
