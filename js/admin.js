@@ -602,6 +602,8 @@
   ══════════════════════════════════════════════════════════════════ */
   var seatsEditingId = null;
   var seatsCurrentMap = {};   // { '1': 'available'|'reserved'|'occupied' }
+  var seatsPaintMode  = 'available'; // modo selección activo
+  var seatsIsDragging = false;
 
   var SEAT_STATES = ['available', 'reserved', 'occupied'];
   var SEAT_COLORS = {
@@ -617,13 +619,18 @@
     var trip = TS.getTrips().find(function (x) { return x.id === tripId; });
     if (!trip) return;
 
-    // Copiar mapa actual
     seatsCurrentMap = Object.assign({}, trip.seatMap || {});
     var total = parseInt(trip.totalSeats, 10) || 0;
 
-    // Nombre de la salida
     var nameEl = $('seats-trip-name');
     if (nameEl) nameEl.textContent = trip.title || 'Sin título';
+
+    // Resetear modo a disponible
+    seatsPaintMode = 'available';
+    if (window.setSeatMode) window.setSeatMode('available');
+
+    // Drag: parar al soltar fuera del modal
+    seatsIsDragging = false;
 
     renderSeatsStats(total);
     renderBus(total);
@@ -632,6 +639,24 @@
     if (modal) modal.style.display = 'block';
     document.body.style.overflow = 'hidden';
   }
+
+  // Funciones globales para drag en los botones (inline handlers)
+  window.seatsStartPaint = function(num) {
+    seatsIsDragging = true;
+    cycleSeat(num);
+  };
+  window.seatsPaintOver = function(num) {
+    if (seatsIsDragging) cycleSeat(num);
+  };
+  window.seatsTouchMove = function(e) {
+    if (!seatsIsDragging) return;
+    e.preventDefault();
+    var touch = e.touches[0];
+    var el = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (el && el.dataset && el.dataset.seat) cycleSeat(parseInt(el.dataset.seat, 10));
+  };
+  document.addEventListener('mouseup',  function() { seatsIsDragging = false; });
+  document.addEventListener('touchend', function() { seatsIsDragging = false; });
 
   function closeSeatsModal() {
     seatsEditingId = null;
@@ -646,29 +671,46 @@
   }
 
   function cycleSeat(num) {
-    var cur = seatState(num);
-    var idx = SEAT_STATES.indexOf(cur);
-    var next = SEAT_STATES[(idx + 1) % SEAT_STATES.length];
+    // Modo selección: aplica el modo activo directamente
+    var next = seatsPaintMode;
     if (next === 'available') {
       delete seatsCurrentMap[String(num)];
     } else {
       seatsCurrentMap[String(num)] = next;
     }
-    // Actualizar solo ese botón
     var btn = document.querySelector('[data-seat="' + num + '"]');
     if (btn) applySeatStyle(btn, num);
-    // Actualizar stats
     var trip = TS.getTrips().find(function (x) { return x.id === seatsEditingId; });
     renderSeatsStats(trip ? (parseInt(trip.totalSeats, 10) || 0) : 0);
   }
 
+  window.setSeatMode = function(mode) {
+    seatsPaintMode = mode;
+    var map = { available: 'smode-avail', reserved: 'smode-reserv', occupied: 'smode-occup' };
+    Object.keys(map).forEach(function(k) {
+      var el = document.getElementById(map[k]);
+      if (!el) return;
+      if (k === mode) {
+        if (k === 'available') { el.style.background = '#1a2332'; el.style.borderColor = 'rgba(255,255,255,.5)'; el.style.color = '#fff'; }
+        else if (k === 'reserved') { el.style.background = 'rgba(34,197,94,.2)'; el.style.borderColor = '#22c55e'; }
+        else { el.style.background = 'rgba(239,68,68,.2)'; el.style.borderColor = '#ef4444'; }
+      } else {
+        el.style.background = 'transparent';
+        if (k === 'available') { el.style.borderColor = 'rgba(255,255,255,.2)'; el.style.color = 'rgba(255,255,255,.6)'; }
+        else if (k === 'reserved') { el.style.borderColor = 'rgba(34,197,94,.3)'; }
+        else { el.style.borderColor = 'rgba(239,68,68,.3)'; }
+      }
+    });
+  };
+
   function applySeatStyle(btn, num) {
     var st = seatState(num);
     var c = SEAT_COLORS[st];
-    btn.style.background = c.bg;
-    btn.style.borderColor = c.border;
-    btn.style.color = c.text;
-    btn.title = SEAT_LABELS[st];
+    btn.style.background   = c.bg;
+    btn.style.borderColor  = c.border;
+    btn.style.color        = c.text;
+    btn.style.borderRadius = '5px';
+    btn.title = 'Asiento ' + num + ' — ' + SEAT_LABELS[st];
   }
 
   function renderSeatsStats(total) {
@@ -717,7 +759,7 @@
       + '</div>';
 
     // Grid de asientos
-    busHtml += '<div style="display:grid;grid-template-columns:1fr 1fr 28px 1fr 1fr;gap:8px;align-items:center;">';
+    busHtml += '<div style="display:grid;grid-template-columns:repeat(2,28px) 20px repeat(2,28px);gap:5px 6px;align-items:center;justify-content:center;">';
 
     var seatNum = 1;
     for (var row = 0; row < rows; row++) {
@@ -756,11 +798,13 @@
   function makeSeatBtn(num) {
     var st = seatState(num);
     var c = SEAT_COLORS[st];
-    return '<button type="button" data-seat="' + num + '" title="' + SEAT_LABELS[st] + '" '
-      + 'style="width:100%;aspect-ratio:1;border-radius:50%;border:2px solid ' + c.border + ';'
-      + 'background:' + c.bg + ';color:' + c.text + ';font-size:.68rem;font-weight:700;'
-      + 'cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;'
-      + 'min-width:32px;min-height:32px;">'
+    return '<button type="button" data-seat="' + num + '" title="Asiento ' + num + ' — ' + SEAT_LABELS[st] + '" '
+      + 'onmousedown="seatsStartPaint(' + num + ')" onmouseenter="seatsPaintOver(' + num + ')" '
+      + 'ontouchstart="seatsStartPaint(' + num + ')" ontouchmove="seatsTouchMove(event)" '
+      + 'style="width:28px;height:24px;border-radius:5px;border:1.5px solid ' + c.border + ';'
+      + 'background:' + c.bg + ';color:' + c.text + ';font-size:.58rem;font-weight:700;'
+      + 'cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;'
+      + 'flex-shrink:0;">'
       + num
       + '</button>';
   }

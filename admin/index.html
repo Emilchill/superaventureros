@@ -244,15 +244,21 @@
           <input id="f-form" type="url" class="field" value="https://forms.gle/ejemplo">
         </div>
 
-        <div>
-          <label class="field-label" for="f-seats">Capacidad de asientos (gugua)</label>
-          <input id="f-seats" type="number" class="field" min="0" max="200" placeholder="0 = sin mapa de asientos">
-          <p style="font-size:.72rem;color:var(--muted);margin-top:.3rem;">Define cuántos asientos tiene la gugua para esta salida. Usa 0 para desactivar el mapa.</p>
-        </div>
-        <div style="display:flex;align-items:flex-end;">
-          <button type="button" id="btn-manage-seats" class="btn-ghost" style="width:100%;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem;" disabled>
-            🚌 Gestionar asientos
-          </button>
+        <div style="grid-column:1/-1;">
+          <label class="field-label" style="display:block;margin-bottom:.5rem;">🚌 Asientos de la gugua</label>
+          <div style="background:rgba(245,184,0,.05);border:1px solid rgba(245,184,0,.18);border-radius:.85rem;padding:.9rem 1rem;">
+            <p style="font-size:.75rem;color:var(--muted);margin-bottom:.65rem;">¿Cuántos asientos tiene el bus para esta salida?</p>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+              <input id="f-seats" type="number" class="field" min="1" max="200"
+                     placeholder="Ej. 49" style="max-width:90px;flex:none;"
+                     oninput="document.getElementById('btn-manage-seats').textContent='🚌 Generar mapa'">
+              <button type="button" id="btn-manage-seats" class="btn-ghost"
+                style="display:flex;align-items:center;gap:.45rem;padding:.6rem 1rem;font-size:.82rem;" disabled>
+                🚌 Gestionar asientos
+              </button>
+            </div>
+            <p style="font-size:.7rem;color:var(--muted);margin-top:.5rem;">Guarda la salida primero, luego usa el botón para abrir el editor de asientos.</p>
+          </div>
         </div>
 
         <div style="grid-column:1/-1;display:flex;gap:.75rem;flex-wrap:wrap;padding-top:.5rem;">
@@ -353,13 +359,23 @@
       <button type="button" id="btn-close-seats" class="btn-ghost" style="padding:.6rem 1rem;font-size:.85rem;">✕ Cerrar</button>
     </div>
 
-    <!-- Legend -->
-    <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem;padding:.75rem 1rem;background:rgba(0,0,0,.25);border-radius:.75rem;align-items:center;">
-      <span style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;">Click para cambiar estado →</span>
-      <div style="display:flex;align-items:center;gap:.4rem;"><div style="width:20px;height:20px;border-radius:50%;background:#374151;border:2px solid #6b7280;"></div><span style="font-size:.82rem;">Disponible</span></div>
-      <div style="display:flex;align-items:center;gap:.4rem;"><div style="width:20px;height:20px;border-radius:50%;background:rgba(34,197,94,.25);border:2px solid #22c55e;"></div><span style="font-size:.82rem;">Reservado</span></div>
-      <div style="display:flex;align-items:center;gap:.4rem;"><div style="width:20px;height:20px;border-radius:50%;background:rgba(239,68,68,.25);border:2px solid #ef4444;"></div><span style="font-size:.82rem;">Ocupado</span></div>
+    <!-- Mode selector -->
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;padding:.7rem .9rem;background:rgba(0,0,0,.25);border-radius:.75rem;align-items:center;">
+      <span style="font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-right:.2rem;">Modo:</span>
+      <button type="button" id="smode-avail"  onclick="setSeatMode('available')"
+        style="padding:.38rem .85rem;border-radius:.5rem;border:1.5px solid rgba(255,255,255,.2);background:#1a2332;color:rgba(255,255,255,.8);font-size:.76rem;font-weight:700;cursor:pointer;">
+        ⬜ Disponible
+      </button>
+      <button type="button" id="smode-reserv" onclick="setSeatMode('reserved')"
+        style="padding:.38rem .85rem;border-radius:.5rem;border:1.5px solid rgba(34,197,94,.3);background:transparent;color:#22c55e;font-size:.76rem;font-weight:700;cursor:pointer;">
+        🟩 Reservado
+      </button>
+      <button type="button" id="smode-occup"  onclick="setSeatMode('occupied')"
+        style="padding:.38rem .85rem;border-radius:.5rem;border:1.5px solid rgba(239,68,68,.3);background:transparent;color:#ef4444;font-size:.76rem;font-weight:700;cursor:pointer;">
+        🟥 Ocupado
+      </button>
     </div>
+    <p style="font-size:.72rem;color:var(--muted);margin-bottom:1rem;">Selecciona un modo y toca (o arrastra) los asientos para cambiarlos.</p>
 
     <!-- Stats -->
     <div id="seats-stats" style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1.25rem;"></div>

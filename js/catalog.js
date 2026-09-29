@@ -287,7 +287,7 @@
       + '</div>';
 
     // Grid de asientos: 2 + pasillo + 2
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr 20px 1fr 1fr;gap:6px;align-items:center;">';
+    html += '<div style="display:grid;grid-template-columns:repeat(2,22px) 16px repeat(2,22px);gap:4px 5px;align-items:center;justify-content:center;">';
 
     var seatNum = 1;
     for (var row = 0; row < ROWS; row++) {
@@ -307,9 +307,8 @@
               bgColor = 'rgba(255,255,255,.06)'; borderColor = 'rgba(255,255,255,.2)'; textColor = 'rgba(255,255,255,.5)';
             }
             html += '<div title="Asiento ' + seatNum + ' — ' + (state === 'reserved' ? 'Reservado' : state === 'occupied' ? 'Ocupado' : 'Disponible') + '" '
-              + 'style="width:100%;aspect-ratio:1;border-radius:50%;border:2px solid ' + borderColor + ';background:' + bgColor + ';'
-              + 'display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700;color:' + textColor + ';'
-              + 'min-width:28px;min-height:28px;">'
+              + 'style="width:22px;height:19px;border-radius:4px;border:1.5px solid ' + borderColor + ';background:' + bgColor + ';'
+              + 'display:flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;color:' + textColor + ';">'
               + seatNum
               + '</div>';
             seatNum++;
@@ -325,13 +324,13 @@
     // Leyenda
     html += '<div style="display:flex;gap:.6rem;justify-content:center;margin-top:.8rem;padding-top:.7rem;border-top:1px dashed rgba(255,255,255,.1);flex-wrap:wrap;">'
       + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:rgba(255,255,255,.4);">'
-        + '<div style="width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.2);"></div>Disponible'
+        + '<div style="width:11px;height:9px;border-radius:2.5px;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.2);"></div>Disponible'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:#22c55e;">'
-        + '<div style="width:12px;height:12px;border-radius:50%;background:rgba(34,197,94,.18);border:1.5px solid #22c55e;"></div>Reservado'
+        + '<div style="width:11px;height:9px;border-radius:2.5px;background:rgba(34,197,94,.18);border:1.5px solid #22c55e;"></div>Reservado'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:#ef4444;">'
-        + '<div style="width:12px;height:12px;border-radius:50%;background:rgba(239,68,68,.18);border:1.5px solid #ef4444;"></div>Ocupado'
+        + '<div style="width:11px;height:9px;border-radius:2.5px;background:rgba(239,68,68,.18);border:1.5px solid #ef4444;"></div>Ocupado'
       + '</div>'
       + '</div>';
 
