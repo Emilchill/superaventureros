@@ -81,6 +81,27 @@
 
   function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
 
+  /* Layout del bus: left+right asientos por lado, backRow = última fila corrida */
+  function normalizeSeatLayout(l) {
+    var left = parseInt(l && l.left, 10), right = parseInt(l && l.right, 10);
+    return {
+      left:    clamp(isFinite(left)  ? left  : 2, 1, 3),
+      right:   clamp(isFinite(right) ? right : 2, 1, 3),
+      backRow: !!(l && l.backRow)
+    };
+  }
+
+  /* Solo guarda estados no-default y asientos dentro de la capacidad */
+  function normalizeSeatMap(m, total) {
+    var out = {};
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return out;
+    Object.keys(m).forEach(function (k) {
+      var n = parseInt(k, 10), st = m[k];
+      if (String(n) === k && n >= 1 && n <= total && (st === 'reserved' || st === 'occupied' || st === 'blocked')) out[k] = st;
+    });
+    return out;
+  }
+
   function normalizeTrip(t) {
     if (!t || typeof t !== 'object') return null;
     var price = Number(t.price);
@@ -112,7 +133,8 @@
       tiktokUrl:        String(t.tiktokUrl    || '').trim(),
       order:            typeof t.order === 'number' && isFinite(t.order) ? t.order : 0,
       totalSeats:       (typeof t.totalSeats === 'number' && isFinite(t.totalSeats) && t.totalSeats >= 0) ? Math.round(t.totalSeats) : 0,
-      seatMap:          (t.seatMap && typeof t.seatMap === 'object' && !Array.isArray(t.seatMap)) ? t.seatMap : {}
+      seatLayout:       normalizeSeatLayout(t.seatLayout),
+      seatMap:          normalizeSeatMap(t.seatMap, (typeof t.totalSeats === 'number' && isFinite(t.totalSeats) && t.totalSeats >= 0) ? Math.round(t.totalSeats) : 0)
     };
   }
 

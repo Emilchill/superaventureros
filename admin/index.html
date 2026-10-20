@@ -62,6 +62,19 @@
     from { transform:rotate(0deg); }
     to   { transform:rotate(360deg); }
   }
+  /* ── Editor de asientos ─────────────────────────────────────── */
+  .smode{padding:.42rem .85rem;border-radius:.55rem;border:1.5px solid var(--border);background:transparent;color:rgba(255,255,255,.75);font-size:.76rem;font-weight:700;cursor:pointer;transition:all .12s;}
+  .smode[data-mode="available"].active{background:#1a2332;border-color:rgba(255,255,255,.55);color:#fff;}
+  .smode[data-mode="reserved"]{color:#22c55e;border-color:rgba(34,197,94,.3);}
+  .smode[data-mode="reserved"].active{background:rgba(34,197,94,.2);border-color:#22c55e;}
+  .smode[data-mode="occupied"]{color:#ef4444;border-color:rgba(239,68,68,.3);}
+  .smode[data-mode="occupied"].active{background:rgba(239,68,68,.2);border-color:#ef4444;}
+  .smode[data-mode="blocked"]{color:#94a3b8;border-color:rgba(148,163,184,.3);}
+  .smode[data-mode="blocked"].active{background:rgba(148,163,184,.2);border-color:#94a3b8;}
+  .seats-box{background:rgba(0,0,0,.25);border-radius:.75rem;padding:.7rem .9rem;margin-bottom:.9rem;}
+  .seats-box .lbl{font-size:.68rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;}
+  .rv-row{display:flex;gap:.75rem;align-items:flex-start;padding:.75rem .9rem;border:1px solid var(--border);border-radius:.85rem;margin-bottom:.5rem;}
+  [data-seat]:hover{transform:scale(1.08);}
 </style>
 </head>
 <body>
@@ -247,17 +260,16 @@
         <div style="grid-column:1/-1;">
           <label class="field-label" style="display:block;margin-bottom:.5rem;">🚌 Asientos de la gugua</label>
           <div style="background:rgba(245,184,0,.05);border:1px solid rgba(245,184,0,.18);border-radius:.85rem;padding:.9rem 1rem;">
-            <p style="font-size:.75rem;color:var(--muted);margin-bottom:.65rem;">¿Cuántos asientos tiene el bus para esta salida?</p>
+            <p style="font-size:.75rem;color:var(--muted);margin-bottom:.65rem;">¿Cuántos asientos tiene el bus? Puedes diseñar el mapa ahora mismo, sin guardar la salida primero.</p>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-              <input id="f-seats" type="number" class="field" min="1" max="200"
-                     placeholder="Ej. 49" style="max-width:90px;flex:none;"
-                     oninput="document.getElementById('btn-manage-seats').textContent='🚌 Generar mapa'">
+              <input id="f-seats" type="number" class="field" min="0" max="200"
+                     placeholder="Ej. 49" style="max-width:90px;flex:none;">
               <button type="button" id="btn-manage-seats" class="btn-ghost"
-                style="display:flex;align-items:center;gap:.45rem;padding:.6rem 1rem;font-size:.82rem;" disabled>
-                🚌 Gestionar asientos
+                style="display:flex;align-items:center;gap:.45rem;padding:.6rem 1rem;font-size:.82rem;">
+                🚌 Diseñar mapa de asientos
               </button>
+              <span id="seats-summary" style="font-size:.74rem;color:var(--muted);"></span>
             </div>
-            <p style="font-size:.7rem;color:var(--muted);margin-top:.5rem;">Guarda la salida primero, luego usa el botón para abrir el editor de asientos.</p>
           </div>
         </div>
 
@@ -349,47 +361,86 @@
   Super Aventureros RD &bull; Admin
 </footer>
 <!-- ══ MODAL: GESTIÓN DE ASIENTOS ════════════════════════════════════ -->
-<div id="seats-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.75);overflow-y:auto;padding:1.5rem;">
-  <div style="max-width:780px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:1.4rem;padding:1.5rem;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:.75rem;">
+<div id="seats-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.78);overflow-y:auto;padding:1rem;">
+  <div style="max-width:820px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:1.4rem;padding:1.4rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.75rem;">
       <div>
         <h2 style="font-size:1.25rem;font-weight:800;margin-bottom:.2rem;">🚌 Mapa de asientos</h2>
         <p id="seats-trip-name" style="color:var(--muted);font-size:.85rem;"></p>
       </div>
-      <button type="button" id="btn-close-seats" class="btn-ghost" style="padding:.6rem 1rem;font-size:.85rem;">✕ Cerrar</button>
+      <div style="display:flex;align-items:center;gap:.6rem;">
+        <span id="seats-dirty" style="display:none;font-size:.7rem;font-weight:700;color:var(--gold);">● Cambios sin guardar</span>
+        <button type="button" id="btn-close-seats" class="btn-ghost" style="padding:.6rem 1rem;font-size:.85rem;">✕ Cerrar</button>
+      </div>
     </div>
 
-    <!-- Mode selector -->
-    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;padding:.7rem .9rem;background:rgba(0,0,0,.25);border-radius:.75rem;align-items:center;">
-      <span style="font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-right:.2rem;">Modo:</span>
-      <button type="button" id="smode-avail"  onclick="setSeatMode('available')"
-        style="padding:.38rem .85rem;border-radius:.5rem;border:1.5px solid rgba(255,255,255,.2);background:#1a2332;color:rgba(255,255,255,.8);font-size:.76rem;font-weight:700;cursor:pointer;">
-        ⬜ Disponible
-      </button>
-      <button type="button" id="smode-reserv" onclick="setSeatMode('reserved')"
-        style="padding:.38rem .85rem;border-radius:.5rem;border:1.5px solid rgba(34,197,94,.3);background:transparent;color:#22c55e;font-size:.76rem;font-weight:700;cursor:pointer;">
-        🟩 Reservado
-      </button>
-      <button type="button" id="smode-occup"  onclick="setSeatMode('occupied')"
-        style="padding:.38rem .85rem;border-radius:.5rem;border:1.5px solid rgba(239,68,68,.3);background:transparent;color:#ef4444;font-size:.76rem;font-weight:700;cursor:pointer;">
-        🟥 Ocupado
-      </button>
+    <!-- 1. Configuración del bus -->
+    <div class="seats-box" style="display:flex;flex-wrap:wrap;gap:.9rem 1.2rem;align-items:flex-end;">
+      <div><span class="lbl" style="display:block;margin-bottom:.3rem;">Capacidad</span>
+        <input id="seats-total" type="number" min="1" max="200" class="field" style="width:90px;padding:.5rem .7rem;"></div>
+      <div><span class="lbl" style="display:block;margin-bottom:.3rem;">Distribución por fila</span>
+        <select id="seats-layout" class="field" style="padding:.5rem .7rem;min-width:170px;"></select></div>
+      <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer;padding-bottom:.55rem;">
+        <input type="checkbox" id="seats-backrow" style="width:1.05rem;height:1.05rem;accent-color:var(--gold);">
+        Última fila corrida (sin pasillo)
+      </label>
     </div>
-    <p style="font-size:.72rem;color:var(--muted);margin-bottom:1rem;">Selecciona un modo y toca (o arrastra) los asientos para cambiarlos.</p>
+
+    <!-- 2. Modo de pintura -->
+    <div class="seats-box" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;">
+      <span class="lbl" style="margin-right:.2rem;">Pintar como:</span>
+      <button type="button" class="smode active" data-mode="available">⬜ Disponible</button>
+      <button type="button" class="smode" data-mode="reserved">🟩 Reservado</button>
+      <button type="button" class="smode" data-mode="occupied">🟥 Ocupado</button>
+      <button type="button" class="smode" data-mode="blocked">⬛ Bloqueado</button>
+      <span style="flex-basis:100%;font-size:.72rem;color:var(--muted);">
+        Toca o arrastra sobre los asientos. Toca el número de una fila para pintarla completa. Tocar un asiento que ya tiene ese estado lo devuelve a «Disponible».
+      </span>
+    </div>
+
+    <!-- 3. Herramientas -->
+    <div class="seats-box" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;">
+      <button type="button" id="seats-undo" class="btn-ghost" style="padding:.4rem .75rem;font-size:.78rem;" title="Ctrl+Z">↶ Deshacer</button>
+      <button type="button" id="seats-redo" class="btn-ghost" style="padding:.4rem .75rem;font-size:.78rem;" title="Ctrl+Y">↷ Rehacer</button>
+      <span style="width:1px;height:1.4rem;background:var(--border);margin:0 .3rem;"></span>
+      <input id="seats-range" type="text" class="field" placeholder="Rango: 1-10, 15, 20-22" style="flex:1;min-width:170px;max-width:240px;padding:.45rem .7rem;font-size:.8rem;">
+      <button type="button" id="seats-range-apply" class="btn-ghost" style="padding:.4rem .75rem;font-size:.78rem;">Aplicar al rango</button>
+      <button type="button" id="seats-all" class="btn-ghost" style="padding:.4rem .75rem;font-size:.78rem;">Aplicar a todos</button>
+    </div>
 
     <!-- Stats -->
-    <div id="seats-stats" style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1.25rem;"></div>
-
-    <!-- Bus visual -->
-    <div style="overflow-x:auto;padding-bottom:.5rem;">
-      <div id="seats-bus-wrap" style="min-width:280px;max-width:420px;margin:0 auto;"></div>
+    <div id="seats-stats" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem;"></div>
+    <div style="height:8px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden;display:flex;margin-bottom:1.1rem;" aria-hidden="true">
+      <div id="seats-bar-res" style="background:#22c55e;width:0;transition:width .2s;"></div>
+      <div id="seats-bar-occ" style="background:#ef4444;width:0;transition:width .2s;"></div>
+      <div id="seats-bar-blk" style="background:#64748b;width:0;transition:width .2s;"></div>
     </div>
 
-    <!-- Quick actions -->
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--border);">
+    <!-- Bus -->
+    <div style="overflow-x:auto;padding-bottom:.5rem;">
+      <div id="seats-bus-wrap" style="min-width:300px;max-width:460px;margin:0 auto;"></div>
+    </div>
+
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1.1rem;padding-top:1.1rem;border-top:1px solid var(--border);">
       <button type="button" id="btn-seats-clear" class="btn-ghost" style="font-size:.82rem;padding:.6rem 1rem;">Limpiar todo</button>
       <button type="button" id="btn-seats-save" class="btn-gold" style="flex:1;min-width:140px;font-size:.85rem;">💾 Guardar mapa</button>
     </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: RESEÑAS (moderación) ════════════════════════════════════ -->
+<div id="reviews-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.78);overflow-y:auto;padding:1rem;">
+  <div style="max-width:680px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:1.4rem;padding:1.4rem;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:1rem;">
+      <div>
+        <h2 style="font-size:1.25rem;font-weight:800;margin-bottom:.2rem;">⭐ Reseñas</h2>
+        <p id="reviews-trip-name" style="color:var(--muted);font-size:.85rem;"></p>
+        <p id="reviews-summary" style="color:var(--gold);font-size:.9rem;font-weight:800;margin-top:.35rem;"></p>
+      </div>
+      <button type="button" id="btn-close-reviews" class="btn-ghost" style="padding:.6rem 1rem;font-size:.85rem;">✕ Cerrar</button>
+    </div>
+    <p style="font-size:.7rem;color:var(--muted);margin-bottom:.9rem;">Los correos se guardan enmascarados por privacidad. Puedes eliminar reseñas inapropiadas o spam.</p>
+    <div id="reviews-list"></div>
   </div>
 </div>
 
@@ -399,9 +450,11 @@
 <script src="../js/oracle-config.js"></script>
 <script src="../js/seed-fallback.js"></script>
 <script src="../js/oracle-storage.js"></script>
-<script src="../js/trips-store.js"></script>
-<script src="../js/oracle-sync.js"></script>
-<script src="../js/admin.js"></script>
+<script src="../js/seat-map.js?v=4.0"></script>
+<script src="../js/reviews-store.js?v=4.0"></script>
+<script src="../js/trips-store.js?v=4.0"></script>
+<script src="../js/oracle-sync.js?v=4.0"></script>
+<script src="../js/admin.js?v=4.0"></script>
 <script>AdminApp.bootstrap();</script>
 </body>
 </html>

@@ -99,6 +99,7 @@
          + '<div class="flex flex-wrap items-center gap-3 text-xs font-bold uppercase tracking-widest mb-4">'
          + '<span class="text-[#F5B800]">\u{1F4CD} ' + escapeHtml(t.location || 'RD') + '</span>'
          + '<span class="bg-white/10 px-4 py-1.5 rounded-full backdrop-blur-md">\u{1F4C5} ' + escapeHtml(TS.formatDateBadge(t)) + '</span>'
+         + '<span data-rating-for="' + cid + '"></span>'
          + '</div>'
          + '<h2 class="text-4xl md:text-5xl font-extrabold leading-tight mb-3">' + escapeHtml(t.title) + '</h2>'
          + desc
@@ -143,6 +144,7 @@
           + '<div class="sa-seats-wrap" style="display:none;margin-bottom:.25rem;"></div>'
           + '<a class="sa-form-btn w-full bg-white text-black font-black text-center py-4 rounded-xl hover:bg-[#F5B800] transition-all duration-300 uppercase tracking-widest text-sm shadow-lg" href="#" target="_blank" rel="noopener noreferrer">Anotarme</a>'
           + '<div class="sa-social flex flex-wrap gap-2"></div>'
+          + '<div class="sa-reviews-wrap"></div>'
         + '</div>'
       + '</div>'
       + '</div>';
@@ -238,12 +240,14 @@
       var total = parseInt(trip.totalSeats, 10) || 0;
       if (total > 0) {
         seatsWrap.style.display = '';
-        seatsWrap.innerHTML = buildClientSeatMap(total, trip.seatMap || {});
+        seatsWrap.innerHTML = buildClientSeatMap(total, trip.seatMap || {}, trip.seatLayout);
       } else {
         seatsWrap.style.display = 'none';
         seatsWrap.innerHTML = '';
       }
     }
+
+    mountReviews(modal, trip);
 
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
@@ -257,85 +261,234 @@
   }
 
   /* ── Mapa de asientos (vista cliente, solo lectura) ──────────── */
-  function buildClientSeatMap(total, seatMap) {
-    var counts = { available: 0, reserved: 0, occupied: 0 };
-    for (var i = 1; i <= total; i++) {
-      var st = seatMap[String(i)] || 'available';
-      counts[st]++;
-    }
-
-    var ROWS = Math.ceil(total / 4);
-
+  function buildClientSeatMap(total, seatMap, layout) {
+    var SM = window.SeatMap;
+    var counts = SM.countStates(total, seatMap);
     var html = '<div style="padding:1rem;background:rgba(255,255,255,.04);border-radius:1rem;border:1px solid rgba(255,255,255,.1);">';
-
-    // Header
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem;flex-wrap:wrap;gap:.5rem;">'
       + '<span style="font-size:.82rem;font-weight:800;color:#F5B800;text-transform:uppercase;letter-spacing:.07em;">🚌 Disponibilidad de asientos</span>'
-      + '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">'
-      + '<span style="font-size:.72rem;background:rgba(107,114,128,.15);border:1px solid #6b7280;border-radius:2rem;padding:.2rem .6rem;color:#9ca3af;">Disp: <b>' + counts.available + '</b></span>'
-      + '<span style="font-size:.72rem;background:rgba(34,197,94,.12);border:1px solid #22c55e;border-radius:2rem;padding:.2rem .6rem;color:#22c55e;">Res: <b>' + counts.reserved + '</b></span>'
-      + '<span style="font-size:.72rem;background:rgba(239,68,68,.12);border:1px solid #ef4444;border-radius:2rem;padding:.2rem .6rem;color:#ef4444;">Ocup: <b>' + counts.occupied + '</b></span>'
-      + '</div>'
+      + '<div style="display:flex;gap:.45rem;flex-wrap:wrap;">' + SM.legendHtml(counts) + '</div></div>';
+    html += '<div style="display:flex;justify-content:center;">' + SM.render({ total: total, layout: layout, map: seatMap, interactive: false }) + '</div>';
+    function key(color, bg, label, extra) {
+      return '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:' + color + ';">'
+        + '<div style="width:11px;height:9px;border-radius:2.5px;border:1.5px solid ' + color + ';background:' + bg + ';' + (extra || '') + '"></div>' + label + '</div>';
+    }
+    html += '<div style="display:flex;gap:.7rem;justify-content:center;margin-top:.8rem;flex-wrap:wrap;">'
+      + key('rgba(255,255,255,.45)', 'rgba(255,255,255,.07)', 'Disponible')
+      + key('#22c55e', 'rgba(34,197,94,.2)', 'Reservado')
+      + key('#ef4444', 'rgba(239,68,68,.2)', 'Ocupado')
+      + (counts.blocked ? key('#94a3b8', 'rgba(148,163,184,.25)', 'Bloqueado') : '')
+      + '</div></div>';
+    return html;
+  }
+
+  /* ── Reseñas ─────────────────────────────────────────────────── */
+  var rv = { tripId: null, list: [], shown: 5, openedAt: 0, rating: 0 };
+
+  function starsBar(avg, size) {
+    var pct = Math.max(0, Math.min(100, (avg / 5) * 100));
+    return '<span role="img" aria-label="' + avg.toFixed(1) + ' de 5 estrellas" style="position:relative;display:inline-block;font-size:' + size + ';line-height:1;letter-spacing:.08em;white-space:nowrap;">'
+      + '<span style="color:rgba(255,255,255,.18);">★★★★★</span>'
+      + '<span style="position:absolute;left:0;top:0;overflow:hidden;white-space:nowrap;width:' + pct + '%;color:#F5B800;">★★★★★</span></span>';
+  }
+
+  function fmtDate(iso) {
+    try { return new Date(iso).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return ''; }
+  }
+
+  var RV_INPUT = 'width:100%;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.14);border-radius:.7rem;color:#fff;padding:.65rem .85rem;font-size:.88rem;';
+
+  function reviewsShell() {
+    return '<div class="sa-rv" style="margin-top:.5rem;padding:1rem;background:rgba(255,255,255,.04);border-radius:1rem;border:1px solid rgba(255,255,255,.1);">'
+      + '<div class="sa-rv-head"></div>'
+      + '<div class="sa-rv-action" style="margin:.9rem 0;"></div>'
+      + '<form class="sa-rv-form" novalidate style="display:none;margin-bottom:1rem;padding:1rem;border-radius:.9rem;background:rgba(0,0,0,.25);border:1px solid rgba(245,184,0,.2);">'
+      +   '<div style="font-size:.8rem;font-weight:800;color:#F5B800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.7rem;">Tu reseña</div>'
+      +   '<div class="sa-rv-picker" role="radiogroup" aria-label="Puntuación" style="display:flex;gap:.2rem;margin-bottom:.8rem;">'
+      +     [1,2,3,4,5].map(function (n) {
+              return '<button type="button" role="radio" aria-checked="false" aria-label="' + n + ' estrella' + (n > 1 ? 's' : '') + '" data-star="' + n + '" style="background:none;border:0;cursor:pointer;font-size:2rem;line-height:1;color:rgba(255,255,255,.2);padding:.1rem .15rem;transition:transform .1s,color .1s;">★</button>';
+            }).join('')
+      +     '<span class="sa-rv-picker-lbl" style="align-self:center;margin-left:.5rem;font-size:.78rem;color:rgba(255,255,255,.5);"></span>'
+      +   '</div>'
+      +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem;">'
+      +     '<label style="display:block;"><span style="display:block;font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:.25rem;">Nombre *</span>'
+      +       '<input name="name" type="text" maxlength="60" autocomplete="name" required style="' + RV_INPUT + '"></label>'
+      +     '<label style="display:block;"><span style="display:block;font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:.25rem;">Correo *</span>'
+      +       '<input name="email" type="email" maxlength="120" autocomplete="email" required style="' + RV_INPUT + '"></label>'
+      +   '</div>'
+      +   '<label style="display:block;margin-bottom:.4rem;"><span style="display:block;font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:.25rem;">Comentario *</span>'
+      +     '<textarea name="comment" rows="4" maxlength="600" required style="' + RV_INPUT + 'resize:vertical;min-height:5.5rem;" placeholder="Cuéntanos cómo fue tu experiencia…"></textarea></label>'
+      +   '<div class="sa-rv-count" style="text-align:right;font-size:.68rem;color:rgba(255,255,255,.35);margin-bottom:.5rem;">0 / 600</div>'
+      +   '<div style="position:absolute;left:-9999px;top:-9999px;" aria-hidden="true"><input name="website" type="text" tabindex="-1" autocomplete="off"></div>'
+      +   '<p style="font-size:.7rem;color:rgba(255,255,255,.4);margin-bottom:.7rem;">🔒 Tu correo <b>no se muestra públicamente</b>; solo lo usamos para evitar reseñas duplicadas.</p>'
+      +   '<div class="sa-rv-msg" role="alert" style="display:none;font-size:.8rem;margin-bottom:.6rem;"></div>'
+      +   '<div style="display:flex;gap:.5rem;">'
+      +     '<button type="submit" class="sa-rv-submit" style="flex:1;background:#F5B800;color:#000;font-weight:900;border:0;border-radius:.8rem;padding:.75rem 1rem;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;">Publicar reseña</button>'
+      +     '<button type="button" class="sa-rv-cancel" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:.8rem;padding:.75rem 1rem;font-size:.8rem;cursor:pointer;">Cancelar</button>'
+      +   '</div>'
+      + '</form>'
+      + '<div class="sa-rv-list"></div>'
       + '</div>';
+  }
 
-    // Bus container
-    html += '<div style="background:#0a0f1a;border:2px solid rgba(255,255,255,.08);border-radius:1.5rem 1.5rem .75rem .75rem;padding:.85rem .7rem 1rem;overflow-x:auto;">';
-
-    // Frente
-    html += '<div style="text-align:center;margin-bottom:.7rem;padding-bottom:.6rem;border-bottom:1px dashed rgba(255,255,255,.1);">'
-      + '<span style="font-size:.68rem;color:rgba(255,255,255,.3);background:rgba(255,255,255,.06);border-radius:2rem;padding:.25rem .7rem;">🚍 Frente del bus</span>'
+  function renderReviewHead(box, list) {
+    var sum = window.ReviewsStore.summarize(list);
+    var head = box.querySelector('.sa-rv-head');
+    var title = '<span style="font-size:.82rem;font-weight:800;color:#F5B800;text-transform:uppercase;letter-spacing:.07em;">⭐ Reseñas</span>';
+    if (!sum.count) {
+      head.innerHTML = title + '<p style="margin-top:.5rem;font-size:.85rem;color:rgba(255,255,255,.5);">Aún no hay reseñas. ¡Sé el primero en opinar!</p>';
+      return;
+    }
+    var bars = [5,4,3,2,1].map(function (n) {
+      var p = Math.round((sum.dist[n] / sum.count) * 100);
+      return '<div style="display:flex;align-items:center;gap:.45rem;font-size:.7rem;color:rgba(255,255,255,.55);">'
+        + '<span style="width:.7rem;text-align:right;">' + n + '</span><span style="color:#F5B800;">★</span>'
+        + '<div style="flex:1;height:6px;border-radius:9px;background:rgba(255,255,255,.08);overflow:hidden;"><div style="height:100%;width:' + p + '%;background:#F5B800;"></div></div>'
+        + '<span style="width:1.6rem;">' + sum.dist[n] + '</span></div>';
+    }).join('');
+    head.innerHTML = title
+      + '<div style="display:flex;gap:1.25rem;align-items:center;flex-wrap:wrap;margin-top:.7rem;">'
+      +   '<div style="text-align:center;min-width:90px;">'
+      +     '<div style="font-size:2.4rem;font-weight:900;line-height:1;color:#fff;">' + sum.avg.toFixed(1) + '</div>'
+      +     '<div style="margin:.3rem 0;">' + starsBar(sum.avg, '1rem') + '</div>'
+      +     '<div style="font-size:.7rem;color:rgba(255,255,255,.45);">' + sum.count + ' reseña' + (sum.count === 1 ? '' : 's') + '</div>'
+      +   '</div>'
+      +   '<div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.2rem;">' + bars + '</div>'
       + '</div>';
+  }
 
-    // Grid de asientos: 2 + pasillo + 2
-    html += '<div style="display:grid;grid-template-columns:repeat(2,22px) 16px repeat(2,22px);gap:4px 5px;align-items:center;justify-content:center;">';
+  function renderReviewList(box) {
+    var wrap = box.querySelector('.sa-rv-list');
+    var list = rv.list;
+    if (!list.length) { wrap.innerHTML = ''; return; }
+    var visible = list.slice(0, rv.shown);
+    wrap.innerHTML = visible.map(function (r) {
+      return '<div style="padding:.8rem 0;border-top:1px solid rgba(255,255,255,.08);">'
+        + '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .6rem;">'
+        +   starsBar(r.rating, '.85rem')
+        +   '<b style="font-size:.86rem;color:#fff;">' + escapeHtml(r.name) + '</b>'
+        +   '<span style="font-size:.7rem;color:rgba(255,255,255,.35);">' + escapeHtml(fmtDate(r.createdAt)) + '</span>'
+        + '</div>'
+        + '<p style="margin-top:.35rem;font-size:.86rem;line-height:1.5;color:rgba(255,255,255,.75);white-space:pre-wrap;word-break:break-word;">' + escapeHtml(r.comment) + '</p>'
+        + '</div>';
+    }).join('')
+    + (list.length > rv.shown
+        ? '<button type="button" class="sa-rv-more" style="width:100%;margin-top:.4rem;background:transparent;color:#F5B800;border:1px solid rgba(245,184,0,.3);border-radius:.7rem;padding:.55rem;font-size:.78rem;font-weight:700;cursor:pointer;">Ver más reseñas (' + (list.length - rv.shown) + ')</button>'
+        : '');
+    var more = wrap.querySelector('.sa-rv-more');
+    if (more) more.addEventListener('click', function () { rv.shown += 5; renderReviewList(box); });
+  }
 
-    var seatNum = 1;
-    for (var row = 0; row < ROWS; row++) {
-      for (var col = 0; col < 5; col++) {
-        if (col === 2) {
-          // Pasillo
-          html += '<div style="text-align:center;font-size:.55rem;color:rgba(255,255,255,.1);">│</div>';
-        } else {
-          if (seatNum <= total) {
-            var state = seatMap[String(seatNum)] || 'available';
-            var bgColor, borderColor, textColor;
-            if (state === 'reserved') {
-              bgColor = 'rgba(34,197,94,.18)'; borderColor = '#22c55e'; textColor = '#22c55e';
-            } else if (state === 'occupied') {
-              bgColor = 'rgba(239,68,68,.18)'; borderColor = '#ef4444'; textColor = '#ef4444';
-            } else {
-              bgColor = 'rgba(255,255,255,.06)'; borderColor = 'rgba(255,255,255,.2)'; textColor = 'rgba(255,255,255,.5)';
-            }
-            html += '<div title="Asiento ' + seatNum + ' — ' + (state === 'reserved' ? 'Reservado' : state === 'occupied' ? 'Ocupado' : 'Disponible') + '" '
-              + 'style="width:22px;height:19px;border-radius:4px;border:1.5px solid ' + borderColor + ';background:' + bgColor + ';'
-              + 'display:flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;color:' + textColor + ';">'
-              + seatNum
-              + '</div>';
-            seatNum++;
-          } else {
-            html += '<div></div>';
-          }
-        }
-      }
+  function renderReviewAction(box) {
+    var act = box.querySelector('.sa-rv-action');
+    if (window.ReviewsStore.hasReviewed(rv.tripId)) {
+      act.innerHTML = '<p style="font-size:.8rem;color:#22c55e;">✓ Gracias, ya dejaste tu reseña para esta salida.</p>';
+      return;
+    }
+    act.innerHTML = '<button type="button" class="sa-rv-open" style="width:100%;background:transparent;color:#fff;border:1.5px solid #F5B800;border-radius:.85rem;padding:.7rem;font-size:.8rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;">✍️ Escribir una reseña</button>';
+    act.querySelector('.sa-rv-open').addEventListener('click', function () {
+      var f = box.querySelector('.sa-rv-form');
+      f.style.display = 'block'; act.style.display = 'none';
+      rv.openedAt = Date.now();
+      f.querySelector('[name=name]').focus();
+    });
+  }
+
+  var STAR_LABELS = ['', 'Malo', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'];
+
+  function wireReviewForm(box) {
+    var form = box.querySelector('.sa-rv-form');
+    var stars = form.querySelectorAll('[data-star]');
+    var lbl = form.querySelector('.sa-rv-picker-lbl');
+    var msg = form.querySelector('.sa-rv-msg');
+
+    function paint(n) {
+      stars.forEach(function (b) {
+        var on = parseInt(b.getAttribute('data-star'), 10) <= n;
+        b.style.color = on ? '#F5B800' : 'rgba(255,255,255,.2)';
+        b.setAttribute('aria-checked', parseInt(b.getAttribute('data-star'), 10) === rv.rating ? 'true' : 'false');
+      });
+      lbl.textContent = STAR_LABELS[n] || '';
+    }
+    stars.forEach(function (b) {
+      var n = parseInt(b.getAttribute('data-star'), 10);
+      b.addEventListener('click', function () { rv.rating = n; paint(n); });
+      b.addEventListener('mouseenter', function () { paint(n); });
+      b.addEventListener('focus', function () { paint(n); });
+    });
+    form.querySelector('.sa-rv-picker').addEventListener('mouseleave', function () { paint(rv.rating); });
+
+    var ta = form.querySelector('[name=comment]');
+    var cnt = form.querySelector('.sa-rv-count');
+    ta.addEventListener('input', function () { cnt.textContent = ta.value.length + ' / 600'; });
+
+    function showMsg(text, ok) {
+      msg.style.display = 'block';
+      msg.style.color = ok ? '#22c55e' : '#f87171';
+      msg.textContent = text;
     }
 
-    html += '</div>';
+    form.querySelector('.sa-rv-cancel').addEventListener('click', function () {
+      form.style.display = 'none'; msg.style.display = 'none';
+      box.querySelector('.sa-rv-action').style.display = '';
+    });
 
-    // Leyenda
-    html += '<div style="display:flex;gap:.6rem;justify-content:center;margin-top:.8rem;padding-top:.7rem;border-top:1px dashed rgba(255,255,255,.1);flex-wrap:wrap;">'
-      + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:rgba(255,255,255,.4);">'
-        + '<div style="width:11px;height:9px;border-radius:2.5px;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.2);"></div>Disponible'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:#22c55e;">'
-        + '<div style="width:11px;height:9px;border-radius:2.5px;background:rgba(34,197,94,.18);border:1.5px solid #22c55e;"></div>Reservado'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:.3rem;font-size:.68rem;color:#ef4444;">'
-        + '<div style="width:11px;height:9px;border-radius:2.5px;background:rgba(239,68,68,.18);border:1.5px solid #ef4444;"></div>Ocupado'
-      + '</div>'
-      + '</div>';
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = form.querySelector('.sa-rv-submit');
+      var tripId = rv.tripId;
+      btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = 'Enviando…';
+      msg.style.display = 'none';
+      window.ReviewsStore.add(tripId, {
+        name: form.querySelector('[name=name]').value,
+        email: form.querySelector('[name=email]').value,
+        rating: rv.rating,
+        comment: ta.value,
+        website: form.querySelector('[name=website]').value,
+        openedAt: rv.openedAt
+      }).then(function (res) {
+        btn.disabled = false; btn.style.opacity = ''; btn.textContent = 'Publicar reseña';
+        if (!res.ok) { showMsg(res.error || 'No se pudo enviar.', false); return; }
+        if (rv.tripId !== tripId) return;
+        rv.list = res.list; rv.shown = Math.max(rv.shown, 5);
+        form.reset(); rv.rating = 0; paint(0); cnt.textContent = '0 / 600';
+        form.style.display = 'none';
+        box.querySelector('.sa-rv-action').style.display = '';
+        renderReviewAction(box); renderReviewHead(box, rv.list); renderReviewList(box);
+        fillRatingChips();
+      });
+    });
+  }
 
-    html += '</div></div>';
-    return html;
+  function mountReviews(modal, trip) {
+    var host = modal.querySelector('.sa-reviews-wrap');
+    if (!host || !window.ReviewsStore) return;
+    rv = { tripId: trip.id, list: [], shown: 5, openedAt: 0, rating: 0 };
+    host.innerHTML = reviewsShell();
+    var box = host.querySelector('.sa-rv');
+    box.querySelector('.sa-rv-head').innerHTML = '<span style="font-size:.82rem;color:rgba(255,255,255,.4);">Cargando reseñas…</span>';
+    wireReviewForm(box);
+    renderReviewAction(box);
+    var id = trip.id;
+    window.ReviewsStore.list(id, true).then(function (list) {
+      if (rv.tripId !== id) return;          // el usuario abrió otra salida mientras cargaba
+      rv.list = list;
+      renderReviewHead(box, list);
+      renderReviewList(box);
+    });
+  }
+
+  /** Chip "★ 4.8 (12)" en cada tarjeta */
+  function fillRatingChips() {
+    if (!window.ReviewsStore) return;
+    document.querySelectorAll('[data-rating-for]').forEach(function (chip) {
+      var id = chip.getAttribute('data-rating-for');
+      window.ReviewsStore.summary(id).then(function (s) {
+        if (!s.count) { chip.innerHTML = ''; return; }
+        chip.innerHTML = '<span style="color:#F5B800;">★</span> ' + s.avg.toFixed(1) + ' <span style="opacity:.6;font-weight:600;">(' + s.count + ')</span>';
+        chip.className = 'bg-white/10 px-4 py-1.5 rounded-full backdrop-blur-md';
+      });
+    });
   }
 
   /* ── Boton flotante WhatsApp ─────────────────────────────────── */
@@ -437,6 +590,7 @@
     }
     if(window.lucide&&lucide.createIcons) lucide.createIcons();
     wireCarousels();
+    fillRatingChips();
   }
 
   function init(){
